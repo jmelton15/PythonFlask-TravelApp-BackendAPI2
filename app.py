@@ -51,34 +51,10 @@ connect_db(app)
  
 
 ######################################################################
-# Session handling for logged in users  
-# @app.before_request
-# def create_token(payload):
-#     """Create JWT for logged in user"""
-    
-    
-# def store_free_trips_and_saved_trips(user):
-#     """ Handles getting how many free trips a user has left to make
-#         As well as how many saved trips they have.
-#     """
-#     session["free_trips"] = user.free_trips
-#     session["saved_trips"] = user.saved_trips
-            
-# def do_login(user):
-#     """Log in user."""
-    
-# def do_logout():
-#     """Logout user.""" 
-
-#     if CURR_USER_KEY in session:
-#         del session['csrf_token']
-#         del session['free_trips']
-#         del session['saved_trips']
-#         del session[CURR_USER_KEY]
-#         del session[MEMBER_STATUS]
-
+# TODO -- ADD IN LOGOUT 
+# TODO -- ADD ABILITY TO DELETE ACCOUNT
+# TODO -- FINALIZE PASSWORD RESET ROUTE
 ###############################################################################
-# Homepage, About Us, and error handling
 
 @app.route('/',methods=["GET"]) 
 def welcome_message():
@@ -92,9 +68,11 @@ def welcome_message():
 @app.route('/register', methods=["POST"])
 def signup_user():
     """Handles signing up a user. 
-    If validated credentials in form, then user is added to database
-    and user is added to session
-    otherwise, redirected with a flash message
+     Data in => {username, email, password}
+     
+     RETURNS => {user_data:{user_id,username,bio,member_status,avatar_pic_url,following,followers,saved_trips,liked_trips},
+                 token:some jwt payload token
+                }
     """
     formData = request.json
     try:
@@ -117,37 +95,24 @@ def signup_user():
             "avatar_pic_url":user.avatar_pic_url,
             "following":[User.serialize_user(following) for following in user.following],
             "followers":[User.serialize_user(follower) for follower in user.followers],
+            "trip_count":user.trip_count,
             "saved_trips":[Trip.serialize_trip(trip) for trip in user.trips],
             "liked_trips":[] if user.liked_trips == None else user.liked_trips
             },
             "token":token.decode()
             }))
-    # form = SignUpForm()
-
-    # if form.validate_on_submit():
-    #     try:
-    #         user = User.register(
-    #             username=form.username.data,
-    #             password=form.password.data,
-    #             email=form.email.data
-    #         )
-    #         db.session.commit()
-
-    #     except IntegrityError:
-    #         flash("Username already taken", 'alert-danger')
-    #         return render_template('register_user.html', form=form)
-
-    #     do_login(user)
-    #     store_free_trips_and_saved_trips(user)
-
-    #     return redirect("/")
-    # else:
-    #     return render_template('register_user.html', form=form) 
     
-
 @app.route('/login', methods=["POST"])
 def login_user():
-    """Handle logging in a user""" 
+    """Handle logging in a user
+     
+      Data in => {username,password}
+      
+      Returns => {user_data:{user_id,username,bio,member_status,avatar_pic_url,following,followers,
+                            follow_count,follower_count,saved_trips,liked_trips},
+                 token:some jwt payload token
+                 }
+    """ 
     formData = request.json 
     user = User.authenticate(formData["username"],formData["password"])
     if user:
@@ -163,6 +128,7 @@ def login_user():
             "followers":[User.serialize_user(follower) for follower in user.followers],
             "follow_count":user.follow_count,
             "follower_count":user.follower_count,
+            "trip_count":user.trip_count,
             "saved_trips":[Trip.serialize_trip(trip) for trip in user.trips],
             "liked_trips":[] if user.liked_trips == None else user.liked_trips
             },
@@ -170,32 +136,6 @@ def login_user():
             }))
     else:
         return jsonify({"Error Message":"Could not get user data, please try logging in again"})
-    
-    # if not g.user:
-    #     form = LoginForm()
-
-    #     if form.validate_on_submit():
-    #         user = User.authenticate(form.username.data,
-    #                                 form.password.data)
-
-    #         if user: 
-    #             do_login(user)
-    #             erase_pass_token(user)
-    #             store_free_trips_and_saved_trips(user)
-    #             flash(f"Hello, {user.username}!", "alert-success")
-    #             return redirect(f"/users/{user.id}/profile")
-
-    #         flash("Invalid credentials.", 'alert-danger')
-    #     return render_template('login_main_page.html', form=form,csrf_token=session['csrf_token'])
-    # else:
-    #     return redirect("/main")
- 
-
-@app.route('/logout')
-def logout():
-    """Handle logout of user."""
-    flash("You Have Successfully Logged Out. See You Later!","alert-success")
-    return redirect("/login")
 
 
 @app.route('/users/<int:user_id>/trips/saved',methods=["GET"])
@@ -221,85 +161,48 @@ def get_users_trips(user_id):
         return jsonify({"Message":"Not Authorized. Must Provide Valid JWT"})
     
 
-@app.route('/users/<int:user_id>/profile',methods=["PATCH","DELETE"])
-def update_or_delete_user(user_id):
-    """ Handles either updating a user's username or deleting the user
-    """
+# @app.route('/users/<int:user_id>/profile',methods=["PATCH","DELETE"])
+# def update_or_delete_user(user_id):
+#     """ Handles either updating a user's username or deleting the user
+#     """
 
-    if not g.user:
-        flash("Unauthorized Access. This Is Not Your Account", "alert-primary")
-        redirect("/login")
-    if validate_client_side_data(request.headers):
-        if request.method == "DELETE":
-            User.query.filter_by(id=user_id).delete()
-            db.session.commit()
-            do_logout()
-            response = {
-                "alert":"Account Successfully Deleted. You're Welcome Back Anytime!"
-            }
-            return jsonify(response=response)
-        if request.method == "PATCH":
-            user = User.query.get_or_404(user_id)
-            user.username = request.json.get('new_username',user.username)
-            try:
-                db.session.commit()
-            except IntegrityError:
-                return jsonify(response={"error":"Username Already Exists. Try Another"})
-            response = {
-                "ok":'OK'
-            }
-            return jsonify(response=response)
-    else:
-        flash("You Cannot Do That","alert-primary")
-        return redirect("/main")
+#     if not g.user:
+#         flash("Unauthorized Access. This Is Not Your Account", "alert-primary")
+#         redirect("/login")
+#     if validate_client_side_data(request.headers):
+#         if request.method == "DELETE":
+#             User.query.filter_by(id=user_id).delete()
+#             db.session.commit()
+#             do_logout()
+#             response = {
+#                 "alert":"Account Successfully Deleted. You're Welcome Back Anytime!"
+#             }
+#             return jsonify(response=response)
+#         if request.method == "PATCH":
+#             user = User.query.get_or_404(user_id)
+#             user.username = request.json.get('new_username',user.username)
+#             try:
+#                 db.session.commit()
+#             except IntegrityError:
+#                 return jsonify(response={"error":"Username Already Exists. Try Another"})
+#             response = {
+#                 "ok":'OK'
+#             }
+#             return jsonify(response=response)
+#     else:
+#         flash("You Cannot Do That","alert-primary")
+#         return redirect("/main")
 
-
-
-###################################################################################
-# Trip Deletion Route
-
-@app.route('/users/<int:user_id>/trips/<int:trip_id>',methods=["DELETE"])
-def delete_trip(user_id,trip_id):
-    """ Handles deleting a trip based on user_id and trip_id
-    """
-    token = authenticate_jwt(request)
-    if(token):
-        # token = jwt_header.split(" ")[1]
-        jwt_payload = User.decode_auth_token(token)
-        if(is_correctuser_or_admin(jwt_payload,user_id)): 
-            Trip.query.filter_by(id=trip_id).delete()
-            db.session.commit()
-            return jsonify({"Message":"Trip Deleted Successfully"})
-        return jsonify({"Message":"You are not authorized to delete this trip"})
-    return jsonify({"Message":"You are not authorized to delete this trip"})    
-    
-    # if not g.user:
-    #     flash("Unauthorized Access.", "alert-primary")
-    #     redirect("/login")
-    # if validate_client_side_data(request.headers):
-    #     user = User.query.get_or_404(user_id)
-    #     Trip.query.filter_by(id=trip_id).delete()
-    #     if not g.member:
-    #         session["saved_trips"] -= 1
-    #         user.saved_trips = session["saved_trips"]
-    #     db.session.commit()
-    #     response = {
-    #         "alert":"Trip Successfully Deleted. Now You Have Space For Another Trip!"
-    #     }
-    #     return jsonify(response=response) 
-    # return redirect(f"/users/{user_id}/profile") 
-             
-               
 ###################################################################################
 # Map Interaction Routes   
     
 @app.route('/users/<int:user_id>/trip',methods=["POST"])
 def create_trip(user_id):
-    """ Takes start_point, end_point, and waypoints and displays all the markers for top rated places
-        Each object in the array is a single marker
+    """ Handles Creating and Displaying New Trip On A Map
     
-        RETURNS [array of objects] => [{name,icon,place_id,address,web_url,position,photo},etc.]
-                    
+        Data in => {startLocation,endLocation,region,waypoints}
+    
+        RETURNS [array of objects] => {marker_data:[{name,icon,place_id,address,web_url,position,photo},etc.]}
     """
     token = authenticate_jwt(request)
     if(token): 
@@ -307,6 +210,8 @@ def create_trip(user_id):
         jwt_payload = User.decode_auth_token(token)
         if(is_correctuser_or_admin(jwt_payload,user_id)):
             user = User.query.get_or_404(user_id)
+            if user.trip_count >= 4:
+                return jsonify({"Message":"Currently, Users Are Only Allowed To Create 4 Trips. Go To The 'About Page' To Learn More"})
             response = {     
                 "member_status":user.member_status, 
                 "saved_trips":user.trip_count
@@ -321,10 +226,11 @@ def create_trip(user_id):
     
 @app.route("/users/<int:user_id>/trip/save",methods=["POST"])
 def save_trip_for_user(user_id):
-    """ Handles processing a request to save user's trip details.
-        Will make sure request is valid and that the user is authorized.
-        Sends a response back to the client-side of "OK" if it is successful.
-        Otherwise, redirects back
+    """ Handles Saving a Created Trip to the Database
+    
+        Data in => {startLocation,endLocation,waypoinData}
+        
+        Returns => {Response:{Message:Your Trip Has Been Saved! Go Take A Look At It On Your Travel Journal Page!}}
     """
     token = authenticate_jwt(request)
     if(token):
@@ -337,6 +243,7 @@ def save_trip_for_user(user_id):
             }
             saved_trip = save_trip_data(request.json)
             if saved_trip:
+                user.trip_count += 1
                 db.session.add(saved_trip)
                 db.session.commit()
                 return jsonify(response=response)
@@ -344,28 +251,30 @@ def save_trip_for_user(user_id):
     token = ''
     return jsonify({"Message":"Not Authorized. Must Provide Valid JWT"})
     
-#     # if not g.user:
-#     #     flash("You Are Not Authorized.","alert-primary")
-#     #     return redirect("/login")
+
+###################################################################################
+# Trip Deletion Route
+# TODO -- SUBTRACT FROM TRIP_COUNT EVENTUALLY
+
+@app.route('/users/<int:user_id>/trips/<int:trip_id>',methods=["DELETE"])
+def delete_trip(user_id,trip_id):
+    """ Handles deleting a trip based on user_id and trip_id
     
-#     # if validate_client_side_data(request.headers):
-#     #     user = User.query.get_or_404(user_id)
-#     #     response = {
-#     #         "ok":'OK'
-#     #     }
-#     #     if not g.member:
-#     #         if can_save_trip() == True:
-#     #             session["saved_trips"] += 1
-#     #             user.saved_trips = session["saved_trips"]
-#     #             save_trip_data(request.json,user_id)
-#     #             return jsonify(response=response)
-#     #         flash("You Cannot Save Anymore Trips.","alert-danger")
-#     #         return redirect(f'/users/{user_id}/trip')
-#     #     user.saved_trips += 1
-#     #     save_trip_data(request.json,user_id)
-#     #     return jsonify(response=response)
-#     # flash("Could Not Validate Data.","alert-danger")
-#     # return redirect(f'/users/{user_id}/trip')
+      Returns => {Message:Trip Deleted Successfully}
+    """
+    token = authenticate_jwt(request)
+    if(token):
+        # token = jwt_header.split(" ")[1]
+        jwt_payload = User.decode_auth_token(token)
+        if(is_correctuser_or_admin(jwt_payload,user_id)):
+            try:
+                Trip.query.filter_by(id=trip_id).delete()
+                db.session.commit()
+                return jsonify({"Message":"Trip Deleted Successfully"})
+            except:
+                return jsonify({f"Message":"There was a problem deleting trip #{trip_id} for user id {user_id}"})
+        return jsonify({"Message":"You are not authorized to delete this trip"})
+    return jsonify({"Message":"You are not authorized to delete this trip"})    
 
 
 ########################################################################################
@@ -417,76 +326,76 @@ def save_trip_data(request_data):
 ####################################################################################
 ## PASSWORD RESET ROUTE ##       
 
-@app.route("/password/forgot",methods=["GET","POST"])
-def send_password_reset():
-    """ Handles showing email authentication page to recieve verification token
-       As well as sending the verification token to the user using twilio-mail service API
-    """
-    form = EmailConfirmationForm()
-    if form.validate_on_submit():
-        email = form.email.data
-        user = verify_email(email)
-        if user:
-            token = secrets.token_urlsafe(32)
-            url = os.environ.get('URL','http://127.0.0.1:5000/password?reset=') + token
-            body = f"""Hello, This Is The Password Reset Link You Requested From 'Down To The Route Of It'.
-                        Click the link below to be redirected to the password reset page:\n 
-                    {url}"""
-            subject = "Down To The Route Of It - Password Reset Link" 
-            msg = Message(recipients=[email],body=body,subject=subject)
-            mail.send(msg)
-            user.reset_token = token
-            db.session.commit()
-            flash("Code Has Been Sent and Should Be In Your Email Shortly","alert-success")
-            return redirect("/password/forgot")
-        else:
-            flash("User Not Found, Check The Email You Entered","alert-danger")
-            return redirect("/register")
-    return render_template("email_confirmation.html",form=form)
+# @app.route("/password/forgot",methods=["GET","POST"])
+# def send_password_reset():
+#     """ Handles showing email authentication page to recieve verification token
+#        As well as sending the verification token to the user using twilio-mail service API
+#     """
+#     form = EmailConfirmationForm()
+#     if form.validate_on_submit():
+#         email = form.email.data
+#         user = verify_email(email)
+#         if user:
+#             token = secrets.token_urlsafe(32)
+#             url = os.environ.get('URL','http://127.0.0.1:5000/password?reset=') + token
+#             body = f"""Hello, This Is The Password Reset Link You Requested From 'Down To The Route Of It'.
+#                         Click the link below to be redirected to the password reset page:\n 
+#                     {url}"""
+#             subject = "Down To The Route Of It - Password Reset Link" 
+#             msg = Message(recipients=[email],body=body,subject=subject)
+#             mail.send(msg)
+#             user.reset_token = token
+#             db.session.commit()
+#             flash("Code Has Been Sent and Should Be In Your Email Shortly","alert-success")
+#             return redirect("/password/forgot")
+#         else:
+#             flash("User Not Found, Check The Email You Entered","alert-danger")
+#             return redirect("/register")
+#     return render_template("email_confirmation.html",form=form)
 
-@app.route("/password",methods=["GET","POST"])
-def show_reset_password_form():
-    """ Handles showing the reset password form as well as handling resetting the user's password
-        if the user is verified via request token
-    """
-    token = request.args.get('reset')
-    user = verify_token(token)
-    if user:
-        form = PasswordResetForm()
-        if form.validate_on_submit():
-            new_pass = form.password.data
-            User.reset_password(new_pass,user)
-            flash("Password Has Successfully Been Reset!","alert-success")
-            erase_pass_token(user)
-            return redirect("/login")
-        return render_template("password_reset_page.html",form=form)        
-####################################################################################
-## FUNCTIONS FOR VERIFYING and DELETEING PASSWORD RESET INFORMATION ##
+# @app.route("/password",methods=["GET","POST"])
+# def show_reset_password_form():
+#     """ Handles showing the reset password form as well as handling resetting the user's password
+#         if the user is verified via request token
+#     """
+#     token = request.args.get('reset')
+#     user = verify_token(token)
+#     if user:
+#         form = PasswordResetForm()
+#         if form.validate_on_submit():
+#             new_pass = form.password.data
+#             User.reset_password(new_pass,user)
+#             flash("Password Has Successfully Been Reset!","alert-success")
+#             erase_pass_token(user)
+#             return redirect("/login")
+#         return render_template("password_reset_page.html",form=form)        
+# ####################################################################################
+# ## FUNCTIONS FOR VERIFYING and DELETEING PASSWORD RESET INFORMATION ##
 
-def verify_email(email):
-    """ function used for verifying users email is in the database system
-    """
-    user = User.query.filter_by(email=email).first()
-    if user:
-        return user
-    else:
-        return False
+# def verify_email(email):
+#     """ function used for verifying users email is in the database system
+#     """
+#     user = User.query.filter_by(email=email).first()
+#     if user:
+#         return user
+#     else:
+#         return False
     
-def verify_token(token):
-    """ function for verifying the token in a query string
-        for password reset
-    """
-    user = User.query.filter_by(reset_token=token).first()
-    if user:
-        return user
-    else:
-        return False
+# def verify_token(token):
+#     """ function for verifying the token in a query string
+#         for password reset
+#     """
+#     user = User.query.filter_by(reset_token=token).first()
+#     if user:
+#         return user
+#     else:
+#         return False
     
-def erase_pass_token(user):
-    """ erases password reset token on users account
-    """
-    user.reset_token = None 
-    db.session.commit()
+# def erase_pass_token(user):
+#     """ erases password reset token on users account
+#     """
+#     user.reset_token = None 
+#     db.session.commit()
 
 ####################################################################################
 ## CSRF-TOKEN VALIDATION AND FREE-TRIP VALIDATION ##
@@ -517,30 +426,7 @@ def can_save_trip():
     else:
         return True
 
-def serialize_token(token):
-    """
-    Serializes a JWT token object to be json returnable
-    """
-    return {
-        "token":token
-    }
     
-##########################################################################################
-# Custom Filters For Jinja Environment
-
-@app.template_filter('random_15')
-def random_fifteen(waypoints):
-    """ Gives back 15 random occurrences from a list of waypoints.
-        If there are 15 or less elements in the list to begin,
-        it just returns the list.
-        For this app, this will be used to return random waypoints on the user's travel journal
-        in a method to overflow the page with waypoints when there are more than 15
-    """
-    if len(waypoints) <= 15:
-        return waypoints
-    else: 
-        random.shuffle(waypoints)
-        return waypoints[:15]
  
 
           
