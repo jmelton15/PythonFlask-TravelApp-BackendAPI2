@@ -1,3 +1,6 @@
+import random
+import re
+from flask import helpers, json
 
 def is_correctuser_or_admin(jwt_payload,user_id):
     """[auth function that determines if the user is an Admin or the correct user]
@@ -18,3 +21,14 @@ def authenticate_jwt(req):
     if jwt_header:
         return jwt_header
     return False
+
+def get_random_photo(waypointData):
+    rand_place = random.choice(waypointData)
+    photo_obj = rand_place["photo"]
+    return json.dumps(photo_obj)
+
+def match_href(link):
+    matched = re.findall(r'href\s?=\s?[\'"]?([^\'" >]+)',link)
+    if matched:
+        return matched[0]
+    return ""

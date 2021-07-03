@@ -1,6 +1,7 @@
 from operator import truediv
-from flask import current_app
+from flask import current_app, json,jsonify
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import create_engine
 from flask_bcrypt import Bcrypt
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
@@ -21,6 +22,7 @@ def connect_db(app):
     """
     db.app = app
     db.init_app(app)
+
 
 class Follows(db.Model):
     """
@@ -67,9 +69,10 @@ class Messages(db.Model):
     __tablename__ = 'messages'
     
     id = db.Column(db.Integer,primary_key=True)
-    msg_txt = db.Column(db.String(150), nullable=False)
+    msg_txt = db.Column(db.String(400), nullable=False)
     created_on = db.Column(db.DateTime)
     conversation_id = db.Column(db.String,nullable=False)
+    from_user_avatar = db.Column(db.String,nullable=False)
     to_user_id = db.Column(
         db.Integer, 
         db.ForeignKey("users.id",ondelete="CASCADE"),
@@ -181,7 +184,9 @@ class User(db.Model):
             "user_id":user.id,
             "bio":user.bio,
             "member_status":user.member_status,
-            "avatar_pic_url":user.avatar_pic_url
+            "avatar_pic_url":user.avatar_pic_url,
+            "follow_count":user.follow_count,
+            "follower_count":user.follower_count
         }
     
     @classmethod
@@ -205,10 +210,12 @@ class User(db.Model):
     password = db.Column(db.String,nullable=False)
     email = db.Column(db.String,unique=True)
     member_status = db.Column(db.Boolean,server_default='f',nullable=True)
-    bio = db.Column(db.String(150),nullable=True,default='No Bio Created Yet, Come Back Again To See!')
-    avatar_pic_url = db.Column(db.String,nullable=True, default='/static/images/default_avatar.jpg')
+    bio = db.Column(db.String(300),nullable=True,default='No Bio Created Yet, Come Back Again To See!')
+    avatar_pic_url = db.Column(db.String,nullable=True, server_default='/static/images/default_avatar.jpg')
     free_trips = db.Column(db.Integer, default=5,nullable=True)
     trip_count = db.Column(db.Integer,default=0,nullable=True)
+    follow_count = db.Column(db.Integer,default=0,nullable=True)
+    follower_count = db.Column(db.Integer,default=0,nullable=True)
     liked_trips = db.Column(db.ARRAY(db.Integer,zero_indexes=True),nullable=False)
     reset_token = db.Column(db.String,nullable=True,unique=True)
     is_admin = db.Column(db.Boolean,server_default='f',nullable=True)
@@ -280,13 +287,13 @@ class Trip(db.Model):
         dec_wp_name = [unpad(cipher.decrypt(wp), 16).decode() for wp in self.waypoint_names]
         dec_wp_address = [unpad(cipher.decrypt(wp), 16).decode() for wp in self.waypoint_addresses]
         dec_coords = [ast.literal_eval(unpad(cipher.decrypt(wp), 16).decode()) for wp in self.waypoint_latlng]
-        wp_coords = unpack_decoded_coords(dec_coords)
+        wp_coords = unpack_decoded_coords(dec_coords) 
         return {'id':self.id,'start_point':dec_sp.decode(),'end_point':dec_ep.decode(), 
                 'waypoint_names':dec_wp_name,'addresses':dec_wp_address,'photo':self.photo,
                 'waypoint_latlng':wp_coords}
      
      
-    @classmethod
+    @classmethod 
     def serialize_trip(cls,trip):
         """
          method for serializing a Trip object into readable json
@@ -298,10 +305,16 @@ class Trip(db.Model):
             "waypoint_names":trip.waypoint_names,
             "waypoint_addresses":trip.waypoint_addresses,
             "waypoint_coords":trip.waypoint_coords,
+            "marker_data":trip.marker_data,
             "photo":trip.photo,
             "user_id":trip.user_id
         }
-        
+    
+    @classmethod
+    def get_trips_from_db(cls,photo_string):
+        engine =create_engine(current_app.config['SQLALCHEMY_DATABASE_URI'])
+        connection = engine.connect()
+        query = """ SELECT id,start_point,end_point,waypoint_names,waypoint_addresses,waypoint_coords,photo::jsonb"""
 
     def __repr__(self):  
         """show info about Trip objects
@@ -315,8 +328,10 @@ class Trip(db.Model):
     waypoint_names = db.Column(db.ARRAY(db.String,zero_indexes=True),nullable=False)
     waypoint_addresses = db.Column(db.ARRAY(db.String,zero_indexes=True),nullable=False)
     waypoint_coords = db.Column(db.ARRAY(db.String,zero_indexes=True),nullable=True)
-    photo = db.Column(db.String, nullable=True, server_default='/static/images/default_trip.jpg')
+    marker_data = db.Column(db.String,nullable=False)
+    photo = db.Column(db.String, nullable=True, server_default="/static/images/default_trip.jpg")
     user_id = db.Column(db.Integer,db.ForeignKey("users.id",ondelete="CASCADE"),nullable=False)
+    
     
 
 

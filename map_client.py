@@ -7,6 +7,7 @@ from datetime import datetime
 import numpy
 import math
 from Linked_List import LinkedList
+from helpers import match_href
 
 googleURL = "https://www.google.com/search?q="
 GOOGLE_API_KEY = keys["GOOGLE_API_KEY"]
@@ -18,7 +19,7 @@ def get_latlng(address):
     """ Takes in a human-readable address and returns the lat,lng data
     """
     geocode_result = gmaps.geocode(address) 
-    return geocode
+    return geocode_result 
 # geocode_result = get_latlng('1700 Madison St.')
 # print(geocode_result[0]['geometry']['location']['lat'],geocode_result[0]['geometry']['location']['lng'])
 
@@ -58,11 +59,15 @@ def sort_top_rated_locations(data,place):
     if data and data != []:
         d = data[0]
         if place and d.get('rating') and d['rating'] != 0:
+            photo_reference = d['photos'][0]['photo_reference'] if d.get('photos') else ""
+            photo = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&maxheight=300&photoreference={photo_reference}&key={GOOGLE_API_KEY}" if photo_reference != "" else ""
+            attribution = match_href(d['photos'][0]['html_attributions'][0]) if photo != "" else ""
             top_rated = {'name':d.get('name',place),'rating':d['rating'],'address':d.get('vicinity',"No Address Info On Google"),
                         'lat':d['geometry']['location']['lat'],'lng':d['geometry']['location']['lng'],
-                        'icon':d['icon'],'place_id':d.get('place_id',"No Place-ID Info On Google")}
+                        'icon':d['icon'],'photo':photo,'attribution':attribution,'place_id':d.get('place_id',"No Place-ID Info On Google")}
             return top_rated
-    return None    
+    return None       
+# 'photo':photo,'attribution':attribution,
      
 
 def get_places_nearby_sorted(coordinates, waypoints):
@@ -106,7 +111,7 @@ def get_starting_ending_details(waypoints,coords,dest="start"):
     last_coord = (coords[last_index]["lat"],coords[last_index]["lng"])
     dest_coord = initial_coord if dest == "start" else last_coord
     for place in waypoints:
-        place_details = gmaps.places_nearby(location=dest_coord,radius=24141,keyword=place)["results"]
+        place_details = gmaps.places_nearby(location=dest_coord,radius=10000,keyword=place)["results"]
         top_rated_details = sort_top_rated_locations(place_details,place)
         if not top_rated_details:
             continue
@@ -142,14 +147,11 @@ def iterate_over_waypoints(waypoints,coordinates,i=None,initial_coord=None):
         return object_array
 
 def urlEncoder(waypointnames):
-    split_array = []
     "+".join(waypointnames[i:i+1] for i in range(0,len(waypointnames),2))
     return waypointnames
 
 def createMarkerDataArrays(waypoints):
-    infoWindowData = []
     placeDetails = []
-    coordLocations = []
     currentNode = waypoints.head 
     while currentNode != None:
         if currentNode.data == []: 
@@ -162,19 +164,20 @@ def createMarkerDataArrays(waypoints):
             place_id = node['place_id']
             lat = node['lat']
             lng = node['lng']
-            placeDetails.append({ 'name':name,
-                                    'icon':icon,
-                                    'place_id':place_id,
-                                    'address':address,
-                                    'web_url':f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}",
-                                    'position':{"lat":lat,"lng":lng}
+            photo = {"img_url":node["photo"],"attribution":node["attribution"]}
+            placeDetails.append({ "name":name,
+                                    "icon":icon,
+                                    "place_id":place_id,
+                                    "address":address,
+                                    "web_url":f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}",
+                                    "position":{"lat":lat,"lng":lng},
+                                    "photo":photo,
                                 })
             # infoWindowData.append(f'''<div class="d-flex flex-column"> <h1>{node["name"]}</h1><blockquote>{node["address"]}''' + 
             #                       f'''</blockquote></div>''' + 
             #                       f'''<a href="{googleURL}{urlEncoder(node['name'])}+{urlEncoder(node["address"])}" target="_blank">Find It On The Web!</a>''')
             # coordLocations.append({"lat":lat,"lng":lng})
         currentNode = currentNode.next_node
-        # [placeDetails,infoWindowData,coordLocations]
     return placeDetails
 
 
@@ -188,12 +191,10 @@ def get_steps(initial_coord,last_coord,coordinates):
     total_distance = get_distance_between_two_coords(initial_coord,last_coord)['distance']
     converted_array_length = num_of_coords * 1609
     step_ratio = (converted_array_length/total_distance)*100
-    if step_ratio > 20 and step_ratio < 50:
-        return math.floor(num_of_coords/7)
-    elif step_ratio > 50:
-        return math.floor(num_of_coords/5)
+    if step_ratio < 7:
+        return math.floor(num_of_coords/16)
     else:
-        return math.floor(num_of_coords/14)
+        return math.floor(num_of_coords/6)
     
 def get_distance_between_two_coords(start,stop):
     """ Takes in two coordinates (lat,lng) and (lat,lng) and checks the distance between them

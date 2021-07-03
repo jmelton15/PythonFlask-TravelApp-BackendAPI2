@@ -16,8 +16,8 @@ from models import db, connect_db,User,Trip
 from flask_bcrypt import Bcrypt
 from map_client import get_places_nearby_sorted,createMarkerDataArrays,get_directions,get_path_points
 from flask_cors import CORS
-from helpers import is_correctuser_or_admin,authenticate_jwt
-
+from helpers import is_correctuser_or_admin,authenticate_jwt,get_random_photo
+from UnsplashPhotoApi import randomWaypointPhoto
 
 CURR_USER_KEY = "curr_user"
 MEMBER_STATUS = "member_status"
@@ -161,6 +161,8 @@ def login_user():
             "avatar_pic_url":user.avatar_pic_url,
             "following":[User.serialize_user(following) for following in user.following],
             "followers":[User.serialize_user(follower) for follower in user.followers],
+            "follow_count":user.follow_count,
+            "follower_count":user.follower_count,
             "saved_trips":[Trip.serialize_trip(trip) for trip in user.trips],
             "liked_trips":[] if user.liked_trips == None else user.liked_trips
             },
@@ -198,12 +200,10 @@ def logout():
 
 @app.route('/users/<int:user_id>/trips/saved',methods=["GET"])
 def get_users_trips(user_id):
-    """ Handle showing the user profile and options for deleting/editing profile
+    """ Gets all the trips the user has saved
     
-    decoded_trips = {'id':self.id,'start_point':dec_sp.decode(),'end_point':dec_ep.decode(), 
-                'waypoint_names':dec_wp_name,'photo':self.photo,
-                'waypoint_latlng':dec_coords}
-                
+    RETURNS =>  {id,start_point,end_point,waypoint_names,waypoint_addresses,waypoint_coords,marker_data,photo,user_id}
+                    
     authorization required: logged in, correct user or admin
     """ 
     token = authenticate_jwt(request)
@@ -262,34 +262,44 @@ def update_or_delete_user(user_id):
 def delete_trip(user_id,trip_id):
     """ Handles deleting a trip based on user_id and trip_id
     """
-    if not g.user:
-        flash("Unauthorized Access.", "alert-primary")
-        redirect("/login")
-    if validate_client_side_data(request.headers):
-        user = User.query.get_or_404(user_id)
-        Trip.query.filter_by(id=trip_id).delete()
-        if not g.member:
-            session["saved_trips"] -= 1
-            user.saved_trips = session["saved_trips"]
-        db.session.commit()
-        response = {
-            "alert":"Trip Successfully Deleted. Now You Have Space For Another Trip!"
-        }
-        return jsonify(response=response) 
-    return redirect(f"/users/{user_id}/profile") 
-         
-# print("##############################################")
-# print("HELLLLOOOOOOO")            
+    token = authenticate_jwt(request)
+    if(token):
+        # token = jwt_header.split(" ")[1]
+        jwt_payload = User.decode_auth_token(token)
+        if(is_correctuser_or_admin(jwt_payload,user_id)): 
+            Trip.query.filter_by(id=trip_id).delete()
+            db.session.commit()
+            return jsonify({"Message":"Trip Deleted Successfully"})
+        return jsonify({"Message":"You are not authorized to delete this trip"})
+    return jsonify({"Message":"You are not authorized to delete this trip"})    
+    
+    # if not g.user:
+    #     flash("Unauthorized Access.", "alert-primary")
+    #     redirect("/login")
+    # if validate_client_side_data(request.headers):
+    #     user = User.query.get_or_404(user_id)
+    #     Trip.query.filter_by(id=trip_id).delete()
+    #     if not g.member:
+    #         session["saved_trips"] -= 1
+    #         user.saved_trips = session["saved_trips"]
+    #     db.session.commit()
+    #     response = {
+    #         "alert":"Trip Successfully Deleted. Now You Have Space For Another Trip!"
+    #     }
+    #     return jsonify(response=response) 
+    # return redirect(f"/users/{user_id}/profile") 
+             
                
 ###################################################################################
 # Map Interaction Routes   
     
 @app.route('/users/<int:user_id>/trip',methods=["POST"])
 def create_trip(user_id):
-    """ Handles displaying and creating a trip for a non-member and a member-user that is logged-in
-        If a non-member: page will not have a a button for saving a trip and will only allow one trip
-        If a member: Page will have a button for saving trips 
-        as well as allow the user To create more than one trip
+    """ Takes start_point, end_point, and waypoints and displays all the markers for top rated places
+        Each object in the array is a single marker
+    
+        RETURNS [array of objects] => [{name,icon,place_id,address,web_url,position,photo},etc.]
+                    
     """
     token = authenticate_jwt(request)
     if(token): 
@@ -325,8 +335,12 @@ def save_trip_for_user(user_id):
             response = {
                 "Message":"Your Trip Has Been Saved! Go Take A Look At It On Your Travel Journal Page!"
             }
-            save_trip_data(request.json)
-            return jsonify(response=response)
+            saved_trip = save_trip_data(request.json)
+            if saved_trip:
+                db.session.add(saved_trip)
+                db.session.commit()
+                return jsonify(response=response)
+            return jsonify({"Message":"There was a problem saving the trip"})
     token = ''
     return jsonify({"Message":"Not Authorized. Must Provide Valid JWT"})
     
@@ -377,25 +391,27 @@ def save_trip_data(request_data):
     """
     # sp and ep should be regular strings
     start_point = request_data["startLocation"] 
-    end_point = request_data["endLocation"]
-    photo = request_data["photo"]
-    user_id = request_data["userId"]
+    end_point = request_data["endLocation"] 
+    user_id = request_data["userId"] 
+    marker_data = request_data["waypointData"]
     waypoint_names = []
     coords = []
     addresses = []
+    photo_obj = get_random_photo(marker_data)
      
-    for place in request_data["waypointData"]:
+     
+    for place in marker_data:
         coord_tupe = str((place["position"]["lat"],place["position"]["lng"]))
         waypoint_names.append(place["name"])
         coords.append(coord_tupe)
         addresses.append(place["address"])
     
-    saved_trip = Trip(start_point=start_point,end_point=end_point,waypoint_names=waypoint_names,waypoint_addresses=addresses,waypoint_coords=coords,
-                    photo=photo,user_id=user_id)
+    saved_trip = Trip(start_point=start_point,end_point=end_point,waypoint_names=waypoint_names,
+                      waypoint_addresses=addresses,waypoint_coords=coords,marker_data=json.dumps(marker_data),
+                      photo=photo_obj,user_id=user_id)
    
-    if saved_trip:
-        db.session.add(saved_trip)
-        db.session.commit()
+    return saved_trip
+    
          
         
 ####################################################################################

@@ -127,8 +127,12 @@ class LinkedList():
     
     def has_node_data(self,data):
         current_node = self.head
-        while current_node is not None:
-            if current_node.data == data:
+        while current_node is not None and len(data) > 0:
+            if len(current_node.data) > 1:
+                for i in range(0,len(data)):
+                    if data[i]['address'] == current_node.data[i]['address']:
+                        return True
+            elif current_node.data[0]['address'] == data[0]['address']:
                 return True
             current_node = current_node.next_node
         return False
