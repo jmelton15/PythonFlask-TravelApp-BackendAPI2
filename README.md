@@ -10,17 +10,9 @@
     </li>
     <li>
       <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
     </li>
     <li><a href="#data-storage-and-safety">Data Storage And Safety</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgements">Acknowledgements</a></li>
   </ol>
 </details>
 
@@ -32,10 +24,10 @@
 ### Capstone Project 2 - DTRI (Down To the Route of It) Refactored!
 ### This Is The Python/Flask Backend API Part of Capstone 2
 
-About This Backend Part Of Project Will Go Here ....
+This is the Python-Flask backend api portion of the project. This API is handles login, register, creating Json tokens, and handling the data algorithms behind creating and saving trips for users. Basically anything that has to do with the user's trips is handled from this API.
 
 ### Future Plans
- Need to Add Plans Here .....
+1.) Finish the password reset portion of the API to allow users a secure way to update their passwords.
 
 ### Built With - Credits To The Following:
 
@@ -46,20 +38,20 @@ About This Backend Part Of Project Will Go Here ....
 <!-- GETTING STARTED -->
 ## Getting Started
 
-How To use App Goes Here.....
+Routes are in the REST api style.
+In this API you will find routes all following '/users/'
+The only routes that do not follow this are the Login and Register, which are /login and /register respectively
+https://jmelton.dev:8001/   -> this will give you back a json value of {"Message":"welcome...."}
 
 
 <!-- DATA STORAGE AND SAFETY -->
 ## Authorization and Authentication
 
-All routes are setup for authorization using JWT (json web tokens) 
-Still working on finishing some routes as well as validators for form data and request data
+All routes are setup for authorization and validation using JWT (json web tokens) 
 
 ## Data Storage And Safety
 
-Everything that is stored to be used later is encrypted and secured while stored. This includes anything from password,email,travel forms, to all the locations from your trips. Decoding alogorithms are in places to bring back the stored data to be used
-on the client side when asked by that specific user. I may have went a little overboard with the encryption even, but it was fun to learn and good practice! However, I may get rid of the encrypting of the locations from trips as that takes time and may not be needed since registered users can see these anyways.
-
+Passwords from users are encrypted with a well-trusted encryption algorithm, not one that I made on my own.
 
 <!-- CONTACT -->
 ## Contact
