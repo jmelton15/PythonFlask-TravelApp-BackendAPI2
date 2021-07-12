@@ -26,6 +26,9 @@
 
 This is the Python-Flask backend api portion of the project. This API is handles login, register, creating Json tokens, and handling the data algorithms behind creating and saving trips for users. Basically anything that has to do with the user's trips is handled from this API.
 
+The detailed explanation of the application can be found at the link below: 
+* [app details](https://github.com/jmelton15/React-TravelApp-Frontend)
+
 ### Future Plans
 1.) Finish the password reset portion of the API to allow users a secure way to update their passwords.
 
