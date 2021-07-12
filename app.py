@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc
 from models import db, connect_db,User,Trip
 from flask_bcrypt import Bcrypt
-from map_client import get_places_nearby_sorted,createMarkerDataArrays,get_directions,get_path_points
+from map_client import get_top_rated_places,get_directions,get_path_points,get_total_distance
 from flask_cors import CORS
 from helpers import is_correctuser_or_admin,authenticate_jwt,get_random_photo
 from UnsplashPhotoApi import randomWaypointPhoto
@@ -77,9 +77,9 @@ def signup_user():
     formData = request.json
     try:
         user = User.register(
-            username=formData["username"],
+            username=formData["username"].lower(),
             password=formData["password"],
-            email=formData["email"]
+            email=formData["email"].lower()
         )  
         db.session.commit()
     except IntegrityError:
@@ -114,7 +114,7 @@ def login_user():
                  }
     """ 
     formData = request.json 
-    user = User.authenticate(formData["username"],formData["password"])
+    user = User.authenticate(formData["username"].lower(),formData["password"])
     if user:
         token = user.create_auth_token(user.id,user.is_admin)
         return (jsonify({'user_data':
@@ -155,7 +155,7 @@ def get_users_trips(user_id):
             trips = user.trips
             saved_trips = [Trip.serialize_trip(trip) for trip in trips]
             return jsonify({"saved_trips":saved_trips})
-        return jsonify({"Message":jwt_payload})
+        return jsonify({"Message":jwt_payload}) 
     else:
         token = ''
         return jsonify({"Message":"Not Authorized. Must Provide Valid JWT"})
@@ -216,9 +216,9 @@ def create_trip(user_id):
                 "member_status":user.member_status, 
                 "saved_trips":user.trip_count
             }
-            trip_data = get_trip_request_data(request.json)
-            marker_data = createMarkerDataArrays(trip_data)
-            response["marker_data"] = marker_data
+            trip_data = handle_trip_request_data(request.json)
+            # marker_data = createMarkerDataArray(trip_data)
+            response["marker_data"] = trip_data
             return jsonify({"data":response})
     else:
         token = ''
@@ -280,9 +280,9 @@ def delete_trip(user_id,trip_id):
 ########################################################################################
 ## FUNCTIONS FOR MAP INTERACTION ##
 
-def get_trip_request_data(request_data):
+def handle_trip_request_data(request_data):
     """ Handles gathering request data from a posted trip on the client side
-        And then runs it through the get_places_nearby_sorted function 
+        And then runs it through the get_top_rated_waypoints function 
         and returns the top_rated_waypoints results
     """
     start_location = request_data["startLocation"]
@@ -290,13 +290,13 @@ def get_trip_request_data(request_data):
     region = request_data["region"] 
     waypoints = request_data["waypoints"]
     direction_data = get_directions(start_location,end_location,region)
+    distance_between = get_total_distance(direction_data)
     path_points = get_path_points(direction_data)
-    return get_places_nearby_sorted(path_points,waypoints)
+    return get_top_rated_places(path_points,waypoints,distance_between)
 
 def save_trip_data(request_data):
     """ Handles gathering request data when a user saves their trip details.
-        This will encrypt their trip details and store the encrypted data in the 
-        database for later access
+        This will save their trip data to the database
     """
     # sp and ep should be regular strings
     start_point = request_data["startLocation"] 
@@ -305,15 +305,15 @@ def save_trip_data(request_data):
     marker_data = request_data["waypointData"]
     waypoint_names = []
     coords = []
-    addresses = []
+    addresses = []  
     photo_obj = get_random_photo(marker_data)
      
      
-    for place in marker_data:
-        coord_tupe = str((place["position"]["lat"],place["position"]["lng"]))
-        waypoint_names.append(place["name"])
-        coords.append(coord_tupe)
-        addresses.append(place["address"])
+    # for place in marker_data:
+    #     for location in place:
+    #         waypoint_names.append(location["name"])
+    #         coords.append(location["position"])
+    #         addresses.append(location["address"])
     
     saved_trip = Trip(start_point=start_point,end_point=end_point,waypoint_names=waypoint_names,
                       waypoint_addresses=addresses,waypoint_coords=coords,marker_data=json.dumps(marker_data),

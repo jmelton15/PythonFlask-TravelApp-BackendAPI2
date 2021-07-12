@@ -128,6 +128,8 @@ class LinkedList():
     def has_node_data(self,data):
         current_node = self.head
         while current_node is not None and len(data) > 0:
+            if(len(current_node.data) == 0): 
+                continue
             if len(current_node.data) > 1:
                 for i in range(0,len(data)):
                     if data[i]['address'] == current_node.data[i]['address']:

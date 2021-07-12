@@ -10,9 +10,10 @@ from Linked_List import LinkedList
 from helpers import match_href
 
 googleURL = "https://www.google.com/search?q="
-GOOGLE_API_KEY = keys["GOOGLE_API_KEY"]
+GOOGLE_SERVER_API_KEY = keys["GOOGLE_SERVER_API_KEY"]
+# GOOGLE_PHOTO_API_KEY = keys["GOOGLE_PHOTO_API_KEY"]
 
-gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
+gmaps = googlemaps.Client(key=GOOGLE_SERVER_API_KEY)
 now = datetime.now() 
 
 def get_latlng(address):
@@ -20,14 +21,15 @@ def get_latlng(address):
     """
     geocode_result = gmaps.geocode(address) 
     return geocode_result 
-# geocode_result = get_latlng('1700 Madison St.')
-# print(geocode_result[0]['geometry']['location']['lat'],geocode_result[0]['geometry']['location']['lng'])
 
 def unpack_decoded_coords(decoded_coordinates):
     """ Handles turning decoded coordinates that is an array of tuples into an array of-
         objects in the form of:
         ex: [{lat:<int>,lng:<int>}, etc...]
         This will allow the client side Google API to display markers again from a saved trip
+        
+        NOTE -> this is only used if the encoding method is used on the server to encrypt trip data. 
+                 Otherwise this goes unused 
     """
     return [{'lat':tupe[0],'lng':tupe[1]} for tupe in decoded_coordinates]
 
@@ -40,183 +42,207 @@ def get_directions(start,stop,region="US",mode="driving"):
                                     mode=mode,)
     return directions_result 
 
+def get_total_distance(directions_data):
+    """[get the total distance from a directions result from google]
+
+    Returns:
+        [int]: [total distance in meters]
+    """
+    distance = directions_data[0]["legs"][0]["distance"]["value"]
+    return distance
+
 def get_path_points(directions_data):
+    """[Gets the coordinates or "stops" along a directions result from google]
+
+    Args:
+        directions_data ([directions result object]): [object with directions data from google]
+
+    Returns:
+        [object]: [0:{lat,lng},1:{lat,lng},etc]
+    """
     steps = directions_data[0]["legs"][0]["steps"]
     path_points = {};   
     for i in range(1,len(steps)):
         path_points[i] = {"lat":steps[i-1]["start_location"]["lat"],"lng":steps[i-1]["start_location"]["lng"]}
     return path_points 
      
-def sort_top_rated_locations(data,place):
+def package_nearby_place_data(data,place="no business name",place_number=0):
     """ Takes data from nearby_places search results and returns the top rated place
         in the search category that is nearby.
-        Returns: {name,rating,lat,lng,icon,place_id} object
-        if there isn't anything it finds, then it returns None
+        if there isn"t anything it finds, then it returns None
+        
+        place_number can be used to choose a different place in the list of results; defaults to the first place index 0
+        
+        place is used only for storing a name if there is no name to a location; defaults to "no business name"
         
         This function currently only returns one top rated place, but can be adjusted to easily 
         return a list of place objects if desired.
+        
+        RETURNS: 
+        photo = {"img_url":node["photo"],"attribution":node["attribution"]}
+        {"name":
+        "icon":
+        "rating":
+        "place_id":
+        "address":
+        "web_url":f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}",
+        "position":{"lat":lat,"lng":lng},
+        "photo":}       
     """
     if data and data != []:
-        d = data[0]
-        if place and d.get('rating') and d['rating'] != 0:
-            photo_reference = d['photos'][0]['photo_reference'] if d.get('photos') else ""
-            photo = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&maxheight=300&photoreference={photo_reference}&key={GOOGLE_API_KEY}" if photo_reference != "" else ""
-            attribution = match_href(d['photos'][0]['html_attributions'][0]) if photo != "" else ""
-            top_rated = {'name':d.get('name',place),'rating':d['rating'],'address':d.get('vicinity',"No Address Info On Google"),
-                        'lat':d['geometry']['location']['lat'],'lng':d['geometry']['location']['lng'],
-                        'icon':d['icon'],'photo':photo,'attribution':attribution,'place_id':d.get('place_id',"No Place-ID Info On Google")}
+        d = data[place_number]
+        if place and d.get("rating") and d["rating"] != 0:
+            photo_reference = d["photos"][0]["photo_reference"] if d.get("photos") else ""
+            img_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&maxheight=300&photoreference={photo_reference}&key={GOOGLE_SERVER_API_KEY}" if photo_reference != "" else ""
+            attribution = match_href(d["photos"][0]["html_attributions"][0]) if img_url != "" else ""
+            photo = {"img_url":img_url,"attribution":attribution}
+            lat = d["geometry"]["location"]["lat"]
+            lng = d["geometry"]["location"]["lng"]
+            position = {"lat":lat,"lng":lng}
+            name = d.get("name",place)
+            address = d.get("vicinity","No Address Info On Google")
+            web_url = f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}"
+            
+            top_rated = {"name":name,"rating":d["rating"],"address":address,"position":position,"icon":d["icon"],
+                         "photo":photo,"place_id":d.get("place_id","No Place-ID Info On Google"),"web_url":web_url}
             return top_rated
-    return None       
-# 'photo':photo,'attribution':attribution,
+    return None           
      
+ ## anything >= 70 limit to 14
+## anything >= 50 < 70 limit to 10
+## anything >= 20 < 50 limit to 8
+## anything >= 10 < 20 limit to 6
+## else keep calculated num
+## These numbers don"t include the start coord and end coord 
+### so add 2 to these numbers to get exact number of stops
+def calc_num_searches(radius,metersBetween):
+    """[A function for setting an ideal number of times the algorithm should search along a route.
+        This is to prevent overlapping the radius too often as well as limiting the number of times the 
+          algorithm requests to google APIs
+       ]
 
-def get_places_nearby_sorted(coordinates, waypoints):
-    """ Takes in an object of coordinates based on index {1:{lat,lng},2:{lat,lng} etc.} each index is a node along the route
-        This function also calls the check_distance function to determine the distance between coordinates
-            This allows the function to not return too many repeated data points
-        
-        Returns a dictionary of the top rated spots in each category along the route
-        The dictionary looks like:
-        {'0':[{'waypoint1':{'name':name str,'rating':rating int,'lat':lat int,'lng':lng int}}],1:[{place:{}}]} etc...
+    Args:
+        radius ([int]): [distance radius in meters]
+        metersBetween ([int]): [distance between the start and stop location in meters]
+
+    Returns:
+        [int]: [a number representing the number of times to request to google for nearby places]
     """
-    number_of_coords = len(coordinates.keys())
-    last_index = number_of_coords - 1
-    waypoint_json_data = LinkedList()
-    stops = 0 ## used to keep track of how many stops we have found places at. 
-    initial_coord = (coordinates[1]["lat"],coordinates[1]["lng"])
-    last_coord = (coordinates[last_index]["lat"],coordinates[last_index]["lng"])
-    steps = get_steps(initial_coord,last_coord,coordinates)
-    
-    starting_waypoint_details = get_starting_ending_details(waypoints,coordinates)
-    ending_waypoint_details = get_starting_ending_details(waypoints,coordinates,dest="end")
-    waypoint_json_data.push(starting_waypoint_details)
-    
-    for i in range(1,len(coordinates)): 
-        if i != (steps * (stops+1)):   
-            continue
-        iterated_data = iterate_over_waypoints(waypoints,coordinates,i)
-        stops += 1 
-        if iterated_data and not waypoint_json_data.has_node_data(iterated_data):
-            waypoint_json_data.push(iterated_data)
-    if not waypoint_json_data.has_node_data(ending_waypoint_details):
-        waypoint_json_data.push(ending_waypoint_details) 
-    return waypoint_json_data
- 
+    stops_with_radius = math.floor(metersBetween/radius)
+    if stops_with_radius >= 70:
+        return 14
+    if stops_with_radius >= 50 and stops_with_radius < 70:
+        return 10
+    if stops_with_radius >= 20 and stops_with_radius < 50:
+        return 8
+    if stops_with_radius >= 10 and stops_with_radius < 20:
+        return 6
+    else:
+        return stops_with_radius if stops_with_radius > 2 else 2
 
-def get_starting_ending_details(waypoints,coords,dest="start"): 
-    object_array = []
-    number_of_coords = len(coords.keys())
-    last_index = number_of_coords - 1
-    initial_coord = (coords[1]["lat"],coords[1]["lng"]) 
-    last_coord = (coords[last_index]["lat"],coords[last_index]["lng"])
-    dest_coord = initial_coord if dest == "start" else last_coord
-    for place in waypoints:
-        place_details = gmaps.places_nearby(location=dest_coord,radius=10000,keyword=place)["results"]
-        top_rated_details = sort_top_rated_locations(place_details,place)
-        if not top_rated_details:
-            continue
-        place_obj = top_rated_details
-        object_array.append(place_obj) 
-    return object_array
     
+def calc_stops_between(coords,num_searches):
+    """[calculates the number of iterations to skip before searching again.
+        Uses the num_searches gotten from calc_num_searches() function to decide.
+       ]
 
-def iterate_over_waypoints(waypoints,coordinates,i=None,initial_coord=None):
-    """ Iterates over each waypoint and checks the nearby places to that waypoint
-        Returns an array of objects to add to the json formatted object
-        The place_count is in place here to index each object in the array of objects 
-        that is in stored_objs
-    """        
-    object_array = []
-    place_count = 0
-    if i != None:
-        for place in waypoints: 
-            details = gmaps.places_nearby(location=(coordinates[i]["lat"],coordinates[i]["lng"]),radius=50000,keyword=place)['results']
-            top_rated = sort_top_rated_locations(details,place)
-            if not top_rated:
-                continue
-            obj = top_rated # {place details} 
-            place_count += 1       
-            object_array.append(obj)  
-        return object_array  ## [{place details},{place details}]
-    else:   
-        for place in waypoints: 
-            details = gmaps.places_nearby(location=initial_coord,radius=50000,keyword=place)['results']
-            top_rated = sort_top_rated_locations(details,place)
-            obj = top_rated
-            object_array.append(obj)  
-        return object_array
+    Args:
+        coords ([list]): [list of coordinates along a path]
+        num_searches ([int]): [a number representing the number of times to request to google for nearby places]
+
+    Returns:
+        [int]: [iterations to skip before requesting to google again]
+    """
+    return math.ceil(len(coords)/num_searches)
+
+
+def has_already(place,top_place,place_object):
+    """[Function used to determine if we have already seen a location in one of our requests.
+        This is used to prevent storing multiple of the same locations in the users trip
+       ]
+
+    Args:
+        place ([string]): [waypoint Point of interest]
+        top_place ([object]): [current place to compare to]
+        place_object ([object]): [object containing all the places we have seen so far]
+
+    Returns:
+        [boolean]: [true if seen false if not]
+    """
+    places_list = place_object.get(place)
+    if places_list:
+        for place in places_list:
+            if place['address'] == top_place['address']:
+                return True
+        return False
+    return False 
+      
+##create something to package according to place like so:
+### {Place1:[{},{},{}],Place2:[{},{},{}]}
+
+## create a function or way to get start coord and end coord POIs
+## could add in a param for number of stops. default = calc_num_searches() result
+def get_top_rated_places(coords,waypoints,metersBetween,radius=50000):
+    """[Handles iterating over the points of interest/waypoints a user input
+        and finding the top rated places along the route. This is done using the other methods in the map_client.py file.
+       ]
+
+    Args:
+        coords ([list]): [list of coordinates along a path]
+        waypoints ([list]): [list of strings that contains all the points of interest from user input]
+        metersBetween ([int]): [distance between the start and stop location in meters]
+        radius ([int,optional]): [distance radius in meters] Defaults to 50000.
+
+    Returns:
+        [object]: [{place1:[{location1},{location2},etc],place2:[]}]
+    """
+    final_places = {}
+    num_searches = calc_num_searches(radius,metersBetween)
+    stops_between = calc_stops_between(coords,num_searches)
+    
+    iterations = stops_between
+    while(iterations < len(coords)):
+        for place in waypoints:
+            place_details = gmaps.places_nearby(location=(coords[iterations]["lat"],coords[iterations]["lng"]),radius=radius,keyword=place)["results"]
+            
+            top_place = package_nearby_place_data(place_details,place) 
+            if not top_place or has_already(place,top_place,final_places):
+                continue;
+            ## this line makes sure we already have an array going before adding
+            if final_places.get(place):
+                final_places[place].append(top_place)
+            else: 
+                final_places[place] = [top_place]
+        iterations = iterations + stops_between
+    return final_places
+
 
 def urlEncoder(waypointnames):
     "+".join(waypointnames[i:i+1] for i in range(0,len(waypointnames),2))
     return waypointnames
 
-def createMarkerDataArrays(waypoints):
-    placeDetails = []
-    currentNode = waypoints.head 
-    while currentNode != None:
-        if currentNode.data == []: 
-            currentNode = currentNode.next_node
-            continue 
-        for node in currentNode.data:
-            name = node['name']
-            icon = node['icon']
-            address = node['address']
-            place_id = node['place_id']
-            lat = node['lat']
-            lng = node['lng']
-            photo = {"img_url":node["photo"],"attribution":node["attribution"]}
-            placeDetails.append({ "name":name,
-                                    "icon":icon,
-                                    "place_id":place_id,
-                                    "address":address,
-                                    "web_url":f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}",
-                                    "position":{"lat":lat,"lng":lng},
-                                    "photo":photo,
-                                })
-            # infoWindowData.append(f'''<div class="d-flex flex-column"> <h1>{node["name"]}</h1><blockquote>{node["address"]}''' + 
-            #                       f'''</blockquote></div>''' + 
-            #                       f'''<a href="{googleURL}{urlEncoder(node['name'])}+{urlEncoder(node["address"])}" target="_blank">Find It On The Web!</a>''')
-            # coordLocations.append({"lat":lat,"lng":lng})
-        currentNode = currentNode.next_node
-    return placeDetails
-
-
-def get_steps(initial_coord,last_coord,coordinates):
-    """ Takes in a starting point and end point coordinate, calculates
-        a stops/distance ratio (step_ratio) and then returns a number of 
-        steps based on that ratio percentage. The number of steps is how many 
-        points to skip before checking nearby places again
-    """
-    num_of_coords = len(coordinates.keys())
-    total_distance = get_distance_between_two_coords(initial_coord,last_coord)['distance']
-    converted_array_length = num_of_coords * 1609
-    step_ratio = (converted_array_length/total_distance)*100
-    if step_ratio < 7:
-        return math.floor(num_of_coords/16)
-    else:
-        return math.floor(num_of_coords/6)
     
-def get_distance_between_two_coords(start,stop):
-    """ Takes in two coordinates (lat,lng) and (lat,lng) and checks the distance between them
-        Returns the distance value and time to travel. 
-        Instead of returning true/false, I opened this function to be used for 
-        all distance data
-        returned data object looks like this:
-        {'distance':value in meters,'duration':value in seconds}
-        #{'elements':[{'distance':{'text':'km','value':num},'duration':{'text':hours mins,'value':num}}]}
-    """
-    distance_data = gmaps.distance_matrix(start,stop)
-    return {'distance':distance_data['rows'][0]['elements'][0]['distance']['value'], #returns distance in meters
-            'duration':distance_data['rows'][0]['elements'][0]['duration']['value']}  #returns duration in seconds
+# def get_distance_between_two_coords(start,stop):
+#     """ Takes in two coordinates (lat,lng) and (lat,lng) and checks the distance between them
+#         Returns the distance value and time to travel. 
+#         Instead of returning true/false, I opened this function to be used for 
+#         all distance data
+#         returned data object looks like this:
+#         {'distance':value in meters,'duration':value in seconds}
+#         #{'elements':[{'distance':{'text':'km','value':num},'duration':{'text':hours mins,'value':num}}]}
+#     """
+#     distance_data = gmaps.distance_matrix(start,stop)
+#     return {'distance':distance_data['rows'][0]['elements'][0]['distance']['value'], #returns distance in meters
+#             'duration':distance_data['rows'][0]['elements'][0]['duration']['value']}  #returns duration in seconds
  
  
-def extract_ids(search_result):
-    """ Takes a search result and returns the place_ids of all the results
-    """
-    ids = []
-    for place in search_result:
-        ids.append(place['place_id'])
-    return ids
+# def extract_ids(search_result):
+#     """ Takes a search result and returns the place_ids of all the results
+#     """
+#     ids = []
+#     for place in search_result:
+#         ids.append(place['place_id'])
+#     return ids
 
 
 def lat_lng(search_result):

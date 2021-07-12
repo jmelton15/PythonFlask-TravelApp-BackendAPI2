@@ -23,9 +23,11 @@ def authenticate_jwt(req):
     return False
 
 def get_random_photo(waypointData):
-    rand_place = random.choice(waypointData)
-    photo_obj = rand_place["photo"]
-    return json.dumps(photo_obj)
+    rand_photos = []
+    for place in waypointData:
+        rand_location = random.choice(waypointData[place])
+        rand_photos.append(rand_location["photo"])
+    return json.dumps(random.choice(rand_photos))
 
 def match_href(link):
     matched = re.findall(r'href\s?=\s?[\'"]?([^\'" >]+)',link)

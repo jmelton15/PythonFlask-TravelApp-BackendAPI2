@@ -211,7 +211,7 @@ class User(db.Model):
     email = db.Column(db.String,unique=True)
     member_status = db.Column(db.Boolean,server_default='f',nullable=True)
     bio = db.Column(db.String(300),nullable=True,default='No Bio Created Yet, Come Back Again To See!')
-    avatar_pic_url = db.Column(db.String,nullable=True, server_default='/static/images/default_avatar.jpg')
+    avatar_pic_url = db.Column(db.String,nullable=True, server_default='https://jmelton.dev:3000/src/images/default_avatar.jpg')
     free_trips = db.Column(db.Integer, default=5,nullable=True)
     trip_count = db.Column(db.Integer,default=0,nullable=True)
     follow_count = db.Column(db.Integer,default=0,nullable=True)
@@ -329,7 +329,7 @@ class Trip(db.Model):
     waypoint_addresses = db.Column(db.ARRAY(db.String,zero_indexes=True),nullable=False)
     waypoint_coords = db.Column(db.ARRAY(db.String,zero_indexes=True),nullable=True)
     marker_data = db.Column(db.String,nullable=False)
-    photo = db.Column(db.String, nullable=True, server_default="/static/images/default_trip.jpg")
+    photo = db.Column(db.String, nullable=True, server_default='https://jmelton.dev:3000/src/images/default_trip.jpg')
     user_id = db.Column(db.Integer,db.ForeignKey("users.id",ondelete="CASCADE"),nullable=False)
     
     
