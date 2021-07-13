@@ -203,11 +203,13 @@ def get_top_rated_places(coords,waypoints,metersBetween,radius=50000):
     iterations = stops_between
     while(iterations < len(coords)):
         for place in waypoints:
-            place_details = gmaps.places_nearby(location=(coords[iterations]["lat"],coords[iterations]["lng"]),radius=radius,keyword=place)["results"]
-            
+            if iterations+stops_between > len(coords):
+                iterations = len(coords)-1
+            place_details = gmaps.places_nearby(location=(coords[iterations]["lat"],coords[iterations]["lng"]),radius=radius,keyword=place)['results']
             top_place = package_nearby_place_data(place_details,place) 
             if not top_place or has_already(place,top_place,final_places):
-                continue;
+                iterations = iterations + stops_between
+                continue
             ## this line makes sure we already have an array going before adding
             if final_places.get(place):
                 final_places[place].append(top_place)
@@ -215,6 +217,7 @@ def get_top_rated_places(coords,waypoints,metersBetween,radius=50000):
                 final_places[place] = [top_place]
         iterations = iterations + stops_between
     return final_places
+
 
 
 def urlEncoder(waypointnames):
