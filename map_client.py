@@ -89,23 +89,26 @@ def package_nearby_place_data(data,place="no business name",place_number=0):
         "position":{"lat":lat,"lng":lng},
         "photo":}       
     """
+    top_places = []
     if data and data != []:
-        d = data[place_number]
-        if place and d.get("rating") and d["rating"] != 0:
-            photo_reference = d["photos"][0]["photo_reference"] if d.get("photos") else ""
-            img_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&maxheight=300&photoreference={photo_reference}&key={GOOGLE_SERVER_API_KEY}" if photo_reference != "" else ""
-            attribution = match_href(d["photos"][0]["html_attributions"][0]) if img_url != "" else ""
-            photo = {"img_url":img_url,"attribution":attribution}
-            lat = d["geometry"]["location"]["lat"]
-            lng = d["geometry"]["location"]["lng"]
-            position = {"lat":lat,"lng":lng}
-            name = d.get("name",place)
-            address = d.get("vicinity","No Address Info On Google")
-            web_url = f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}"
-            
-            top_rated = {"name":name,"rating":d["rating"],"address":address,"position":position,"icon":d["icon"],
-                         "photo":photo,"place_id":d.get("place_id","No Place-ID Info On Google"),"web_url":web_url}
-            return top_rated
+        # d = data[place_number]
+        for d in data:
+            if place and d.get("rating") and d["rating"] != 0:
+                photo_reference = d["photos"][0]["photo_reference"] if d.get("photos") else ""
+                img_url = f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&maxheight=300&photoreference={photo_reference}&key={GOOGLE_SERVER_API_KEY}" if photo_reference != "" else ""
+                attribution = match_href(d["photos"][0]["html_attributions"][0]) if img_url != "" else ""
+                photo = {"img_url":img_url,"attribution":attribution}
+                lat = d["geometry"]["location"]["lat"]
+                lng = d["geometry"]["location"]["lng"]
+                position = {"lat":lat,"lng":lng}
+                name = d.get("name",place)
+                address = d.get("vicinity","No Address Info On Google")
+                web_url = f"{googleURL}{urlEncoder(name)}+{urlEncoder(address)}"
+                
+                top_rated = {"name":name,"rating":d["rating"],"address":address,"position":position,"icon":d["icon"],
+                            "photo":photo,"place_id":d.get("place_id","No Place-ID Info On Google"),"web_url":web_url}
+                top_places.append(top_rated)
+        return top_places
     return None           
      
  ## anything >= 70 limit to 14
@@ -153,7 +156,7 @@ def calc_stops_between(coords,num_searches):
     Returns:
         [int]: [iterations to skip before requesting to google again]
     """
-    return math.ceil(len(coords)/num_searches)
+    return math.floor(len(coords)/num_searches)
 
 
 def has_already(place,top_place,place_object):
@@ -185,6 +188,8 @@ def has_already(place,top_place,place_object):
 def get_top_rated_places(coords,waypoints,metersBetween,radius=50000):
     """[Handles iterating over the points of interest/waypoints a user input
         and finding the top rated places along the route. This is done using the other methods in the map_client.py file.
+        
+        recheck_value is used if a top_rated place has already been found. It will search for the next place available in the google results.
        ]
 
     Args:
@@ -200,16 +205,22 @@ def get_top_rated_places(coords,waypoints,metersBetween,radius=50000):
     num_searches = calc_num_searches(radius,metersBetween)
     stops_between = calc_stops_between(coords,num_searches)
     
+    
     iterations = stops_between
     while(iterations < len(coords)):
         for place in waypoints:
+            recheck_value = 2
             if iterations+stops_between > len(coords):
                 iterations = len(coords)-1
             place_details = gmaps.places_nearby(location=(coords[iterations]["lat"],coords[iterations]["lng"]),radius=radius,keyword=place)['results']
-            top_place = package_nearby_place_data(place_details,place) 
-            if not top_place or has_already(place,top_place,final_places):
+            top_places = package_nearby_place_data(place_details,place) 
+            top_place = top_places[0]
+            if(not top_place):
                 iterations = iterations + stops_between
                 continue
+            while(has_already(place,top_place,final_places)):
+                top_place = top_places[recheck_value]
+                recheck_value += 1
             ## this line makes sure we already have an array going before adding
             if final_places.get(place):
                 final_places[place].append(top_place)
